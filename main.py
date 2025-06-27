@@ -1,7 +1,7 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, Updater
 import asyncio
 
 # Логирование
@@ -40,7 +40,20 @@ async def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    await app.run_polling()
+
+    # Вручную запускаем бота без вызова run_polling()
+    await app.initialize()
+    await app.updater.start_polling()
+    await app.start()
+
+    # Ждём завершения (например, по сигналу)
+    try:
+        while True:
+            await asyncio.sleep(3600)  # Работаем вечно
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("🔴 Бот останавливается...")
+        await app.updater.stop()
+        await app.stop()
 
 if __name__ == "__main__":
     asyncio.run(main())
