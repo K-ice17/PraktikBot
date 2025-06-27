@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: praktik-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: TELEGRAM_TOKEN
+        value: 7809040819:AAHOVWb_dnv6kgdWOHdEFJ7cid5CZx_amAs
