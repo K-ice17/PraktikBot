@@ -1,77 +1,60 @@
 import os
-from datetime import datetime
-from flask import Flask, request
-from telegram import Bot, Update, ReplyKeyboardMarkup
+import logging
+import asyncio
+from flask import Flask
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-TOKEN = os.getenv('TELEGRAM_TOKEN')
+# Логирование
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Токен из переменной среды
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN environment variable not set")
 
-bot = Bot(token=TOKEN)
-
+# Flask сервер для Render
 app = Flask(__name__)
 
-# Хранение выбранной темы для каждого пользователя (chat_id)
-user_categories = {}
+@app.route("/")
+def index():
+    return "✅ Бот работает!"
 
-# Клавиатура с категориями
-keyboard = [['🧹 Клининг'], ['💻 IT'], ['📄 Предоставить документ']]
-reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+# Обработчик /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("Оставить заявку", callback_data="submit_application")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Привет! Нажми кнопку ниже для заявки:", reply_markup=reply_markup)
 
-def send_to_sheets(user_id, category, text):
-    # TODO: Реализовать отправку данных в Google Sheets
-    pass
+# Обработчик нажатий кнопок
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-def send_to_group(user_id, category, text):
-    # TODO: Реализовать пересылку сообщений в Telegram-группу
-    pass
+    if query.data == "submit_application":
+        user = query.from_user
+        logger.info(f"Заявка от @{user.username} (ID: {user.id})")
+        await query.edit_message_text("✅ Ваша заявка принята! Спасибо.")
 
-@app.route(f'/{TOKEN}', methods=['POST'])
-def telegram_webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, bot)
-    if not update.message or update.message.text is None:
-        return 'OK'
-    chat_id = update.message.chat.id
-    text = update.message.text
-    user = update.message.from_user
-    user_id = user.id
-    username = user.username or ''
-    # Логирование сообщения в файл
-    with open('messages.log', 'a', encoding='utf-8') as f:
-        f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {user_id} - {username} - {text}\n")
-    # Обработка команды /start
-    if text == '/start':
-        user_categories[chat_id] = None
-        bot.send_message(chat_id=chat_id, text="Пожалуйста, выберите тему:", reply_markup=reply_markup)
-    elif text in ['🧹 Клининг', '💻 IT', '📄 Предоставить документ']:
-        # Пользователь выбрал категорию
-        user_categories[chat_id] = text
-        bot.send_message(chat_id=chat_id, text=f"Вы выбрали тему \"{text}\". Отправьте текстовое сообщение по этой теме.")
-    else:
-        # Обычное текстовое сообщение
-        category = user_categories.get(chat_id)
-        if category:
-            # Обработка сообщения с выбранной категорией
-            send_to_sheets(user_id, category, text)
-            send_to_group(user_id, category, text)
-            bot.send_message(chat_id=chat_id, text="Спасибо! Ваше сообщение получено.")
-            user_categories[chat_id] = None
-        else:
-            bot.send_message(chat_id=chat_id, text="Пожалуйста, выберите тему, нажав на кнопку ниже.", reply_markup=reply_markup)
-    return 'OK'
+# Асинхронный запуск
+async def main():
+    application = Application.builder().token(TOKEN).build()
 
-if __name__ == '__main__':
-    # Установка webhook на Render
-    render_url = os.getenv('RENDER_EXTERNAL_URL')
-    if render_url:
-        webhook_url = f"{render_url}/{TOKEN}"
-        bot.set_webhook(webhook_url)
-    else:
-        hostname = os.getenv('RENDER_EXTERNAL_HOSTNAME')
-        if hostname:
-            webhook_url = f"https://{hostname}/{TOKEN}"
-            bot.set_webhook(webhook_url)
-    # Запуск Flask-сервера
-    port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button_handler))
+
+    # Запуск Flask параллельно
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, lambda: app.run(host="0.0.0.0", port=8080))
+
+    # Запуск Telegram-бота
+    await application.run_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
