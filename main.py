@@ -1,5 +1,7 @@
 import os
 import logging
+import asyncio
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -16,6 +18,13 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN environment variable not set")
+
+# Flask-сервер
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def index():
+    return "✅ Бот работает и слушает Telegram"
 
 # Обработчик команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -35,14 +44,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Получена заявка от @{user.username} (ID: {user.id})")
         await query.edit_message_text("✅ Заявка получена! Спасибо!")
 
-# Запуск бота
+# Асинхронный запуск
 async def main():
     logger.info("🟢 Бот запускается...")
+
+    # Запускаем Flask в отдельном потоке
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, lambda: flask_app.run(host="0.0.0.0", port=8080))
+
+    # Создаём Telegram-бота
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
+
+    # Запуск бота
     await app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
