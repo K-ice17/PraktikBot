@@ -7,3 +7,5 @@ services:
     envVars:
       - key: TELEGRAM_TOKEN
         value: 7809040819:AAHOVWb_dnv6kgdWOHdEFJ7cid5CZx_amAs
+      - key: WEBHOOK_URL
+        value: https://praktikbot.onrender.com
