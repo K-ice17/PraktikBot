@@ -1,50 +1,42 @@
-import os
-from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from flask import Flask, request
+import logging
+import os
+import json
 
-TOKEN = os.environ.get("TOKEN", "7809040819:AAHOVWb_dnv6kgdWOHdEFJ7cid5CZx_amAs")
+TOKEN = os.getenv("TOKEN")
 
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+
+application = Application.builder().token(TOKEN).build()
 app = Flask(__name__)
 
-# Создание Telegram-приложения (бота)
-application = Application.builder().token(TOKEN).build()
-
-# /start команда
+# Команды
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Привет! Выберите категорию:\n"
-        "🧹 Клининг\n💻 IT Вопросы\n📄 Пожелания"
-    )
+    await update.message.reply_text("Привет! Я бот для логирования заявок. Выберите категорию:\n🛠 Техподдержка\n🧑‍💻 IT Вопрос")
 
-# Обработка обычных сообщений
+# Обработка текста
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message.text
     user = update.effective_user
-    text = update.message.text
+    log_entry = {
+        "user": user.username,
+        "text": message,
+    }
+    with open("messages.log", "a") as f:
+        f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+    await update.message.reply_text("✅ Заявка получена.")
 
-    # Сохраняем сообщения в лог-файл
-    with open("messages.log", "a", encoding="utf-8") as f:
-        f.write(f"{user.first_name} (@{user.username}) [{user.id}]: {text}\n")
-
-    await update.message.reply_text("Спасибо! Ваша заявка получена.")
-
-# Обработчики
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Webhook route
+# Flask endpoint для webhook
 @app.route(f"/{TOKEN}", methods=["POST"])
-async def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, application.bot)
-    await application.process_update(update)
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
     return "ok"
 
-# Проверка работы сервиса
-@app.route("/", methods=["GET"])
-def index():
-    return "Бот работает!"
-
-# Запуск Flask
 if __name__ == "__main__":
-    app.run(port=5000)
+    application.run_polling()
