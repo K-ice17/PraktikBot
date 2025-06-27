@@ -2,6 +2,7 @@ import os
 import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+import asyncio
 
 # Логирование
 logging.basicConfig(
@@ -42,6 +43,4 @@ async def main():
     await app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    asyncio.run(main())
