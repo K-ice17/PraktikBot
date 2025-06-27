@@ -3,7 +3,9 @@ import logging
 import asyncio
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler, ContextTypes
+)
 
 # Логирование
 logging.basicConfig(
@@ -12,49 +14,47 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Токен из переменной среды
+# Токен из переменной окружения
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN environment variable not set")
 
-# Flask сервер для Render
-app = Flask(__name__)
+# Flask-сервер
+flask_app = Flask(__name__)
 
-@app.route("/")
+@flask_app.route("/")
 def index():
-    return "✅ Бот работает!"
+    return "✅ Бот работает и слушает Telegram"
 
-# Обработчик /start
+# Обработчик команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("Оставить заявку", callback_data="submit_application")],
-    ]
+    keyboard = [[InlineKeyboardButton("Оставить заявку", callback_data="submit")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Привет! Нажми кнопку ниже для заявки:", reply_markup=reply_markup)
+    await update.message.reply_text("Привет! Нажми кнопку ниже:", reply_markup=reply_markup)
 
-# Обработчик нажатий кнопок
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Обработчик кнопок
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.data == "submit_application":
+    if query.data == "submit":
         user = query.from_user
-        logger.info(f"Заявка от @{user.username} (ID: {user.id})")
-        await query.edit_message_text("✅ Ваша заявка принята! Спасибо.")
+        logger.info(f"Получена заявка от @{user.username} (ID: {user.id})")
+        await query.edit_message_text("✅ Заявка получена! Спасибо!")
 
 # Асинхронный запуск
 async def main():
-    application = Application.builder().token(TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button_handler))
-
-    # Запуск Flask параллельно
+    # Запускаем Flask отдельно
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, lambda: app.run(host="0.0.0.0", port=8080))
+    loop.run_in_executor(None, lambda: flask_app.run(host="0.0.0.0", port=8080))
 
-    # Запуск Telegram-бота
-    await application.run_polling()
+    # Создаём Telegram-бот
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+
+    # Запуск бота
+    await app.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
