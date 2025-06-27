@@ -54,8 +54,7 @@ async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
 
     # Запуск бота
-   print("🟢 Бот запускается...")
-await app.run_polling()
+    await app.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
