@@ -1,78 +1,77 @@
 import os
-import json
-import logging
+from datetime import datetime
 from flask import Flask, request
-from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram import Bot, Update, ReplyKeyboardMarkup
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_TOKEN environment variable not set")
 
-# Flask-приложение
+bot = Bot(token=TOKEN)
+
 app = Flask(__name__)
 
-# Переменные окружения
-TOKEN = os.getenv("TOKEN")
-PORT = int(os.environ.get("PORT", 5000))
+# Хранение выбранной темы для каждого пользователя (chat_id)
+user_categories = {}
 
-# Создание Telegram-приложения
-application = Application.builder().token(TOKEN).build()
+# Клавиатура с категориями
+keyboard = [['🧹 Клининг'], ['💻 IT'], ['📄 Предоставить документ']]
+reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
-# Обработчик команды /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Привет! Выберите категорию заявки:\n📌 Обучение\n💻 IT Вопросы"
-    )
+def send_to_sheets(user_id, category, text):
+    # TODO: Реализовать отправку данных в Google Sheets
+    pass
 
-# Обработчик обычных сообщений
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
+def send_to_group(user_id, category, text):
+    # TODO: Реализовать пересылку сообщений в Telegram-группу
+    pass
+
+@app.route(f'/{TOKEN}', methods=['POST'])
+def telegram_webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, bot)
+    if not update.message or update.message.text is None:
+        return 'OK'
+    chat_id = update.message.chat.id
     text = update.message.text
+    user = update.message.from_user
+    user_id = user.id
+    username = user.username or ''
+    # Логирование сообщения в файл
+    with open('messages.log', 'a', encoding='utf-8') as f:
+        f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {user_id} - {username} - {text}\n")
+    # Обработка команды /start
+    if text == '/start':
+        user_categories[chat_id] = None
+        bot.send_message(chat_id=chat_id, text="Пожалуйста, выберите тему:", reply_markup=reply_markup)
+    elif text in ['🧹 Клининг', '💻 IT', '📄 Предоставить документ']:
+        # Пользователь выбрал категорию
+        user_categories[chat_id] = text
+        bot.send_message(chat_id=chat_id, text=f"Вы выбрали тему \"{text}\". Отправьте текстовое сообщение по этой теме.")
+    else:
+        # Обычное текстовое сообщение
+        category = user_categories.get(chat_id)
+        if category:
+            # Обработка сообщения с выбранной категорией
+            send_to_sheets(user_id, category, text)
+            send_to_group(user_id, category, text)
+            bot.send_message(chat_id=chat_id, text="Спасибо! Ваше сообщение получено.")
+            user_categories[chat_id] = None
+        else:
+            bot.send_message(chat_id=chat_id, text="Пожалуйста, выберите тему, нажав на кнопку ниже.", reply_markup=reply_markup)
+    return 'OK'
 
-    log = {
-        "user_id": user.id,
-        "username": user.username,
-        "first_name": user.first_name,
-        "text": text,
-    }
-
-    with open("messages.log", "a", encoding="utf-8") as f:
-        f.write(json.dumps(log, ensure_ascii=False) + "\n")
-
-    await update.message.reply_text("✅ Заявка получена, спасибо!")
-
-# Добавляем обработчики в приложение
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-# Flask маршруты
-@app.route("/", methods=["GET"])
-def index():
-    return "PraktikBot работает", 200
-
-@app.route(f"/webhook/{TOKEN}", methods=["POST"])
-async def webhook():
-    update_data = request.get_json(force=True)
-    update = Update.de_json(update_data, application.bot)
-    await application.process_update(update)
-    return "ok", 200
-
-# Запуск приложения
-if __name__ == "__main__":
-    import asyncio
-
-    async def main():
-        # Устанавливаем Webhook
-        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook/{TOKEN}"
-        await application.bot.set_webhook(webhook_url)
-
-        # Запускаем Flask
-        app.run(host="0.0.0.0", port=PORT)
-
-    asyncio.run(main())
+if __name__ == '__main__':
+    # Установка webhook на Render
+    render_url = os.getenv('RENDER_EXTERNAL_URL')
+    if render_url:
+        webhook_url = f"{render_url}/{TOKEN}"
+        bot.set_webhook(webhook_url)
+    else:
+        hostname = os.getenv('RENDER_EXTERNAL_HOSTNAME')
+        if hostname:
+            webhook_url = f"https://{hostname}/{TOKEN}"
+            bot.set_webhook(webhook_url)
+    # Запуск Flask-сервера
+    port = int(os.getenv('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
